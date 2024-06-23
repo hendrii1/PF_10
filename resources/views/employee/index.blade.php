@@ -117,7 +117,7 @@
                 <thead>
                     <tr>
                         <th>ID</th>
-                        <th>No.</th>
+                        <th>No</th>
                         <th>First Name</th>
                         <th>Last Name</th>
                         <th>Email</th>

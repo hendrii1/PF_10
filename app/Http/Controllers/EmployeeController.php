@@ -2,41 +2,47 @@
 
 namespace App\Http\Controllers;
 
-use Illuminate\Support\Facades\DB;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Facades\DB;
 use App\Models\Employee;
 use App\Models\Position;
-use Illuminate\Support\Str;
+use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
+use RealRashid\SweetAlert\Facades\Alert;
+use Maatwebsite\Excel\Facades\Excel;
+use App\Jobs\EmployeesExport;
+use PDF;
+
+
 
 class EmployeeController extends Controller
 {
+
+    public function __construct()
+    {
+        $this->middleware('auth');
+    }
+
     /**
-     * Display a listing of the resource.
+     * Show the application dashboard.
+     *
+     * @return \Illuminate\Contracts\Support\Renderable
      */
     public function index()
-    {
-        $pageTitle = 'Employee List';
-
-        // Query Builder
-        // $employees = DB::table('employees')
-        //     ->leftJoin('positions', 'employees.position_id', '=', 'positions.id')
-        //     ->select('*', 'employees.id as employee_id', 'positions.name as position_name')
-        //     ->get();
-
-        // return view('employees.index', [
-        //     'pageTitle' => $pageTitle,
-        //     'employees' => $employees
-        // ]);
-
-        // ELOQUENT
-        $employees = Employee::all();
-        return view('employee.index', [
-            'pageTitle' => $pageTitle,
-            'employees' => $employees
+    {$pageTitle = 'Employee List';
+        confirmDelete();
+        $positions = Position::all();
+        return view('employee.index',[
+                'pageTitle' => $pageTitle,
+                'positions' => $positions
         ]);
     }
+
+
+
+
 
     /**
      * Show the form for creating a new resource.
@@ -45,10 +51,6 @@ class EmployeeController extends Controller
     {
         $pageTitle = 'Create Employee';
 
-        // Query Builder
-        // $positions = DB::table('positions')->get();
-
-        // return view('employee.create', compact('pageTitle', 'positions'));
         // ELOQUENT
         $positions = Position::all();
         return view('employee.create', compact('pageTitle', 'positions'));
@@ -65,6 +67,8 @@ class EmployeeController extends Controller
             'numeric' => 'Isi :attribute dengan angka'
         ];
 
+
+
         $validator = Validator::make($request->all(), [
             'firstName' => 'required',
             'lastName' => 'required',
@@ -74,10 +78,10 @@ class EmployeeController extends Controller
 
         if ($validator->fails()) {
             return redirect()->back()->withErrors($validator)->withInput();
-        }
 
-        // Get File
-        $file = $request->file('cv');
+        }
+            // Get File
+            $file = $request->file('cv');
 
         if ($file != null) {
             $originalFilename = $file->getClientOriginalName();
@@ -87,16 +91,6 @@ class EmployeeController extends Controller
             $file->store('public/files');
         }
 
-
-        // Query Builder
-        // DB::table('employees')->insert([
-        //     'firstname' => $request->firstName,
-        //     'lastname' => $request->lastName,
-        //     'email' => $request->email,
-        //     'age' => $request->age,
-        //     'position_id' => $request->position,
-        // ]);
-
         // ELOQUENT
         $employee = New Employee;
         $employee->firstname = $request->firstName;
@@ -104,34 +98,28 @@ class EmployeeController extends Controller
         $employee->email = $request->email;
         $employee->age = $request->age;
         $employee->position_id = $request->position;
-
         if ($file != null) {
             $employee->original_filename = $originalFilename;
             $employee->encrypted_filename = $encryptedFilename;
         }
-
         $employee->save();
+
+        Alert::success('Added Successfully', 'Employee Data Added Successfully.');
 
         return redirect()->route('employees.index');
     }
-
 
     /**
      * Display the specified resource.
      */
     public function show(string $id)
     {
-        $pageTitle = 'Employee Detail';
 
-        // Query Builder
-        // $employee = DB::table('employees')
-        //     ->leftJoin('positions', 'employees.position_id', '=', 'positions.id')
-        //     ->select('*', 'employees.id as employee_id', 'positions.name as position_name')
-        //     ->where('employees.id', $id)
-        //     ->first();
+        $pageTitle = 'Employee Detail';
 
         // ELOQUENT
         $employee = Employee::find($id);
+
         return view('employee.show', compact('pageTitle', 'employee'));
     }
 
@@ -142,23 +130,10 @@ class EmployeeController extends Controller
     {
         $pageTitle = 'Edit Employee';
 
-        // Query Builder
-        // $employee = DB::table('employees')
-        //     ->leftJoin('positions', 'employees.position_id', '=', 'positions.id')
-        //     ->select('*', 'employees.id as employee_id', 'positions.name as position_name')
-        //     ->where('employees.id', $id)
-        //     ->first();
-
-        // if (!$employee) {
-        //     abort(404); // Handle if employee not found
-        // }
-
-        // Query Builder
-        // $positions = DB::table('positions')->get();
-
         // ELOQUENT
         $positions = Position::all();
         $employee = Employee::find($id);
+        // $file ='public/files/'.$employee->encrypted_filename;
 
         return view('employee.edit', compact('pageTitle', 'positions', 'employee'));
     }
@@ -166,9 +141,6 @@ class EmployeeController extends Controller
     /**
      * Update the specified resource in storage.
      */
-/**
- * Update the specified resource in storage.
- */
     public function update(Request $request, string $id)
     {
         $messages = [
@@ -182,46 +154,48 @@ class EmployeeController extends Controller
             'lastName' => 'required',
             'email' => 'required|email',
             'age' => 'required|numeric',
-            'position' => 'required',
-            'cv' => 'nullable|mimes:pdf|max:2048', // Batasan jenis file dan ukuran file
         ], $messages);
 
         if ($validator->fails()) {
             return redirect()->back()->withErrors($validator)->withInput();
         }
 
-        // Cari data karyawan yang akan diupdate
-        $employee = Employee::findOrFail($id);
+        $file = $request->file('cv');
+
+        if ($file != null) {
+            $originalFilename = $file->getClientOriginalName();
+            $encryptedFilename = $file->hashName();
+        }
+
+
+        // ELOQUENT
+        $employee = Employee::find($id);
         $employee->firstname = $request->firstName;
         $employee->lastname = $request->lastName;
         $employee->email = $request->email;
         $employee->age = $request->age;
         $employee->position_id = $request->position;
-        $employee = Employee::findOrFail($id);
 
         if ($request->hasFile('cv')) {
-            // Hapus file CV yang lama jika ada
-            Storage::delete($employee->cv_file);
+            $file = $request->file('cv');
 
-            // Simpan file CV yang baru
-            $cvFile = $request->file('cv');
-            $originalFilename = $cvFile->getClientOriginalName();
-            $cvPath = $cvFile->store('cv', 'storage_name'); // Ganti 'storage_name' dengan nama penyimpanan yang sesuai
+            // Simpan file baru
+            $file->store('public/files');
 
-            // Simpan path file CV yang baru ke dalam database
-            $employee->cv_file = $cvPath;
-            $employee->original_filename = $originalFilename;
+            // Hapus file lama
+            Storage::delete('public/files/'.$employee->encrypted_filename);
+
+            // Update nama file baru dalam model
+            if ($file != null) {
+                $employee->original_filename = $originalFilename;
+                $employee->encrypted_filename = $encryptedFilename;
+            }
         }
-        
-        // Simpan perubahan pada karyawan
         $employee->save();
 
-        // Redirect atau melakukan tindakan lain setelah penyimpanan berhasil
-        // ...
+        Alert::success('Changed Successfully', 'Employee Data Changed Successfully.');
 
-        // Kembali ke halaman edit dengan pesan sukses
-        return redirect()->route('employees.edit', ['employee' => $employee->id])
-            ->with('success', 'Employee updated successfully.');
+        return redirect()->route('employees.index');
     }
 
     /**
@@ -229,26 +203,70 @@ class EmployeeController extends Controller
      */
     public function destroy(string $id)
     {
-        /// Query Builder
-        // DB::table('employees')
-        //     ->where('id', $id)
-        //     ->delete();
+        $employee = Employee::find($id);
+        $file ='public/files/'.$employee->encrypted_filename;
+
+
+        if (!empty($file)) {
+            // Hapus file dari direktori public
+            Storage::delete('/' . $file);
+        }
+
+        // Hapus entitas dari database
+        $employee->delete();
+
 
         // ELOQUENT
-        Employee::find($id)->delete();
-        return redirect()->route('employees.index');
-    }
+        // $file = Employee::find($id);
+        // File::delete(public_path('cv').'/'.$file->cv);
 
+        // Employee::find($id)->delete();
+
+        Alert::success('Deleted Successfully', 'Employee Data Deleted Successfully.');
+
+        return redirect()->route('employees.index');
+
+    }
     public function downloadFile($employeeId)
     {
         $employee = Employee::find($employeeId);
         $encryptedFilename = 'public/files/'.$employee->encrypted_filename;
-        $downloadFilename = strtolower($employee->firstname.'_'.$employee->lastname.'_cv.pdf');
+        $downloadFilename = Str::lower($employee->firstname.'_'.$employee->lastname.'_cv.pdf');
 
-        if (Storage::exists($encryptedFilename)) {
+        if(Storage::exists($encryptedFilename)) {
             return Storage::download($encryptedFilename, $downloadFilename);
         }
     }
+
+    public function getData(Request $request)
+    {
+        $employees = Employee::with('position');
+
+        if ($request->ajax()) {
+            return datatables()->of($employees)
+                ->addIndexColumn()
+                ->addColumn('actions', function($employee) {
+                    return view('employee.actions', compact('employee'));
+                })
+                ->toJson();
+        }
+    }
+
+    public function exportExcel()
+    {
+        EmployeesExport::dispatch();
+        return back()->with('success', 'Export to Excel job has been dispatched!');
+    }
+
+    public function exportPdf()
+    {
+        $employees = Employee::all();
+
+        $pdf = PDF::loadView('employee.export_pdf', compact('employees'));
+
+        return $pdf->download('employees.pdf');
+    }
+
+
+
 }
-
-
